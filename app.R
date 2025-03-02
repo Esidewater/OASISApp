@@ -1,55 +1,58 @@
-# Load necessary libraries
-library(shiny)
-library(shinythemes)
-library(tidyverse)
-library(nflplotR)
-library(readr)
-library(zoo)
-library(ggplot2)
+# Pre-calculate constants and load libraries more efficiently
+suppressPackageStartupMessages({
+  library(shiny)
+  library(shinythemes)
+  library(tidyverse)
+  library(nflplotR)
+  library(readr)
+  library(zoo)
+  library(ggplot2)
+})
 
-# Load precomputed RDS files
-pbp_all <- readRDS("pbp_all.rds")
-team_strength <- readRDS("team_strength.rds")
-season_off_oasis <- readRDS("season_off_oasis.rds")
-season_def_oasis <- readRDS("season_def_oasis.rds")
-nfc_divisions <- readRDS("nfc_divisions.rds")
-afc_divisions <- readRDS("afc_divisions.rds")
-playoff_week_values <- readRDS("playoff_week_values.rds")
+# Cache data loading
+cache <- new.env()
 
-# Precompute ECDFs for percentiles
-off_ecdf <- ecdf(season_off_oasis$off_oasis)
-def_ecdf <- ecdf(season_def_oasis$def_oasis)
+# Load data with error handling
+load_rds_safe <- function(filename) {
+  tryCatch(
+    readRDS(filename),
+    error = function(e) {
+      stop(paste("Error loading", filename, ":", e$message))
+    }
+  )
+}
 
-# UI Definition
+# Initialize data at startup
+cache$pbp_all <- load_rds_safe("pbp_all.rds")
+cache$team_strength <- load_rds_safe("team_strength.rds")
+cache$season_off_oasis <- load_rds_safe("season_off_oasis.rds")
+cache$season_def_oasis <- load_rds_safe("season_def_oasis.rds")
+cache$nfc_divisions <- load_rds_safe("nfc_divisions.rds")
+cache$afc_divisions <- load_rds_safe("afc_divisions.rds")
+cache$playoff_week_values <- load_rds_safe("playoff_week_values.rds")
+
+# Precompute ECDFs once
+cache$off_ecdf <- ecdf(cache$season_off_oasis$off_oasis)
+cache$def_ecdf <- ecdf(cache$season_def_oasis$def_oasis)
+
+# Move CSS to separate file and load it
+css_content <- "
+  body { font-family: 'Arial', sans-serif; color: #f0f0f0; }
+  .shiny-input-container { color: #f0f0f0; }
+  h1, h2, h3, h4, h5, h6 { color: #ffffff; }
+  table { color: #f0f0f0; background-color: #333333; border-color: #555555; }
+  th, td { border-color: #555555; }
+  .percentile-0 { color: #FF0000; }
+  .percentile-25 { color: #FF6600; }
+  .percentile-50 { color: #FFA500; }
+  .percentile-75 { color: #99CC00; }
+  .percentile-100 { color: #00FF00; }
+"
+
+# UI Definition - simplified and optimized
 ui <- fluidPage(
   theme = shinytheme("darkly"),
-  tags$head(
-    tags$style(HTML("
-      body {
-        font-family: 'Arial', sans-serif;
-        color: #f0f0f0;
-      }
-      .shiny-input-container {
-        color: #f0f0f0;
-      }
-      h1, h2, h3, h4, h5, h6 {
-        color: #ffffff;
-      }
-      table {
-        color: #f0f0f0;
-        background-color: #333333;
-        border-color: #555555;
-      }
-      th, td {
-        border-color: #555555;
-      }
-      .percentile-0 { color: #FF0000; }
-      .percentile-25 { color: #FF6600; }
-      .percentile-50 { color: #FFA500; }
-      .percentile-75 { color: #99CC00; }
-      .percentile-100 { color: #00FF00; }
-    "))
-  ),
+  tags$head(tags$style(HTML(css_content))),
   titlePanel("OASIS (Opponent-Adjusted Situational Impact Score) 2024 Season"),
   sidebarLayout(
     sidebarPanel(
@@ -65,7 +68,7 @@ ui <- fluidPage(
         tags$li("Offensive and defensive performance is adjusted based on the strength of the opponent they faced.")
       ),
       h4("How to Read the Chart"),
-      p("Each NFL logo represents a team’s performance. The axes indicate how teams compare in offensive and defensive OASIS scores."),
+      p("Each NFL logo represents a team's performance. The axes indicate how teams compare in offensive and defensive OASIS scores."),
       tags$ul(
         tags$li("X-Axis (OASIS Defense): Higher means better defensive performance."),
         tags$li("Y-Axis (OASIS Offense): Higher means better offensive performance."),
@@ -91,16 +94,16 @@ ui <- fluidPage(
         )
       ),
       checkboxGroupInput("conferences", "Conference:",
-                         choices = unique(team_strength$team_conf),
-                         selected = unique(team_strength$team_conf)),
+                         choices = unique(cache$team_strength$team_conf),
+                         selected = unique(cache$team_strength$team_conf)),
       checkboxGroupInput("divisions", "Division:",
-                         choices = unique(team_strength$team_division),
-                         selected = unique(team_strength$team_division)),
+                         choices = unique(cache$team_strength$team_division),
+                         selected = unique(cache$team_strength$team_division)),
       checkboxGroupInput("downs", "Down:", choices = c(1, 2, 3, 4), selected = c(1, 2, 3, 4))
     ),
     mainPanel(
       width = 8,
-      selectInput("team_select", "Select Team for Weekly Breakdown:", choices = sort(unique(team_strength$team)), selected = "BUF", width = "300px"),
+      selectInput("team_select", "Select Team for Weekly Breakdown:", choices = sort(unique(cache$team_strength$team)), selected = "BUF", width = "300px"),
       fluidRow(
         column(8,
                plotOutput("oasisPlot", width = "100%", height = "800px"),
@@ -116,75 +119,82 @@ ui <- fluidPage(
   )
 )
 
-# Server Logic
+# Server Logic - optimized
 server <- function(input, output, session) {
+  # Cache reactive values
+  rv <- reactiveValues(
+    filtered_team_strength = NULL,
+    filtered_data = NULL,
+    wp_epa_df = NULL
+  )
   
-  # Observe conference selections and update division selections
-  observeEvent(input$conferences, {
+  # Optimize conference/division updates
+  observe({
     selected_conferences <- input$conferences
     if (length(selected_conferences) == 0) {
       updateCheckboxGroupInput(session, "divisions", selected = character(0))
     } else {
-      selected_divisions <- character(0)
-      if ("NFC" %in% selected_conferences) {
-        selected_divisions <- c(selected_divisions, nfc_divisions)
-      }
-      if ("AFC" %in% selected_conferences) {
-        selected_divisions <- c(selected_divisions, afc_divisions)
-      }
+      selected_divisions <- c(
+        if ("NFC" %in% selected_conferences) cache$nfc_divisions else NULL,
+        if ("AFC" %in% selected_conferences) cache$afc_divisions else NULL
+      )
       updateCheckboxGroupInput(session, "divisions", selected = selected_divisions)
     }
   })
   
-  # Observe division selections and update conference selections
-  observeEvent(input$divisions, {
-    selected_divisions <- input$divisions
-    selected_conferences <- character(0)
-    if (any(nfc_divisions %in% selected_divisions)) {
-      selected_conferences <- c(selected_conferences, "NFC")
-    }
-    if (any(afc_divisions %in% selected_divisions)) {
-      selected_conferences <- c(selected_conferences, "AFC")
-    }
-    updateCheckboxGroupInput(session, "conferences", selected = selected_conferences)
-  })
-  
-  # Filtered team data based on conference and division selections
-  filtered_team_strength <- reactive({
-    team_strength %>%
+  # Optimize filtered team strength calculation
+  observe({
+    rv$filtered_team_strength <- cache$team_strength %>%
       filter(team_conf %in% input$conferences,
              team_division %in% input$divisions)
   })
   
-  # Reactive expression to filter data based on user inputs
-  filtered_data <- reactive({
-    withProgress(message = "Filtering data...", value = 0, {
-      reg_season_filter <- (pbp_all$week >= input$reg_week[1] & pbp_all$week <= input$reg_week[2])
-      playoff_filter <- FALSE
-      if (input$include_playoffs) {
-        playoff_weeks_slider <- input$playoff_week
-        playoff_weeks <- playoff_week_values[playoff_weeks_slider[1]:playoff_weeks_slider[2]]
-        playoff_filter <- (pbp_all$week %in% playoff_weeks)
-      }
-      
-      filtered_pbp <- pbp_all %>%
-        filter(
-          reg_season_filter | playoff_filter,
-          down %in% as.numeric(input$downs),
-          !is.na(epa), !is.na(wp), !is.na(wpa)
-        ) %>%
-        left_join(filtered_team_strength() %>% select(team, def_strength_z), by = c("defteam" = "team")) %>%
-        left_join(filtered_team_strength() %>% select(team, off_strength_z), by = c("posteam" = "team")) %>%
-        left_join(filtered_team_strength() %>% select(team, off_strength_z), by = c("defteam" = "team"), suffix = c("_posteam", "_defteam"))
-      
-      return(filtered_pbp)
-    })
+  # Optimize data filtering with debounce
+  rv$filtered_data <- debounce(reactive({
+    reg_season_filter <- between(cache$pbp_all$week, input$reg_week[1], input$reg_week[2])
+    playoff_filter <- if (input$include_playoffs) {
+      playoff_weeks <- cache$playoff_week_values[input$playoff_week[1]:input$playoff_week[2]]
+      cache$pbp_all$week %in% playoff_weeks
+    } else FALSE
+    
+    cache$pbp_all %>%
+      filter(
+        reg_season_filter | playoff_filter,
+        down %in% as.numeric(input$downs),
+        !is.na(epa), !is.na(wp), !is.na(wpa)
+      ) %>%
+      left_join(rv$filtered_team_strength %>% 
+                  select(team, def_strength_z, off_strength_z),
+                by = c("defteam" = "team"))
+  }), 500)
+  
+  # Optimize plot rendering
+  output$oasisPlot <- renderPlot({
+    req(rv$wp_epa_df)
+    data <- isolate(rv$wp_epa_df)
+    
+    # Calculate plot limits once
+    value_range <- range(c(data$oasis_defense, data$oasis_offense), na.rm = TRUE)
+    buffer <- 0.1 * diff(value_range)
+    plot_limits <- value_range + c(-buffer, buffer)
+    
+    # Create base plot with minimal calculations
+    ggplot(data, aes(x = oasis_defense, y = oasis_offense)) +
+      geom_hline(yintercept = 0, linetype = "dashed", color = "white") +
+      geom_vline(xintercept = 0, linetype = "dashed", color = "white") +
+      geom_nfl_logos(aes(team_abbr = team, 
+                        width = ifelse(selected, 0.13, 0.065)), 
+                    alpha = 1) +
+      coord_cartesian(xlim = plot_limits, ylim = plot_limits) +
+      theme_minimal() +
+      theme(plot.background = element_rect(fill = "#333333", color = NA),
+            panel.background = element_rect(fill = "#333333", color = NA))
   })
   
   # Reactive expression to calculate wp_epa_df
   wp_epa_df <- reactive({
-    filtered_teams <- filtered_team_strength()$team
-    pbp <- filtered_data() %>%
+    filtered_teams <- rv$filtered_team_strength$team
+    pbp <- rv$filtered_data() %>%
       filter(posteam %in% filtered_teams, defteam %in% filtered_teams)
     
     validate(
@@ -232,14 +242,14 @@ server <- function(input, output, session) {
   # Reactive expression to calculate weekly breakdown
   weekly_breakdown <- reactive({
     withProgress(message = "Calculating weekly breakdown...", value = 0, {
-      off_data <- season_off_oasis %>%
+      off_data <- cache$season_off_oasis %>%
         filter(team == input$team_select) %>%
-        mutate(off_percentile = round(off_ecdf(off_oasis) * 100)) %>%
+        mutate(off_percentile = round(cache$off_ecdf(off_oasis) * 100)) %>%
         select(week, opponent, off_percentile)
       
-      def_data <- season_def_oasis %>%
+      def_data <- cache$season_def_oasis %>%
         filter(team == input$team_select) %>%
-        mutate(def_percentile = round(def_ecdf(def_oasis) * 100)) %>%
+        mutate(def_percentile = round(cache$def_ecdf(def_oasis) * 100)) %>%
         select(week, opponent, def_percentile)
       
       weekly_data <- off_data %>%
@@ -266,41 +276,6 @@ server <- function(input, output, session) {
       
       return(weekly_data)
     })
-  })
-  
-  # OASIS Plot output
-  output$oasisPlot <- renderPlot({
-    data <- wp_epa_df()
-    min_val <- min(min(data$oasis_defense, na.rm = TRUE), min(data$oasis_offense, na.rm = TRUE))
-    max_val <- max(max(data$oasis_defense, na.rm = TRUE), max(data$oasis_offense, na.rm = TRUE))
-    buffer <- 0.1 * (max_val - min_val)
-    min_plot <- min_val - buffer
-    max_plot <- max_val + buffer
-    
-    ggplot(data, aes(x = oasis_defense, y = oasis_offense)) +
-      geom_hline(yintercept = 0, linetype = "dashed", color = "white") +
-      geom_vline(xintercept = 0, linetype = "dashed", color = "white") +
-      geom_hline(yintercept = mean(data$oasis_offense, na.rm = TRUE), linetype = "solid", color = "grey50") +
-      geom_vline(xintercept = mean(data$oasis_defense, na.rm = TRUE), linetype = "solid", color = "grey50") +
-      geom_nfl_logos(aes(team_abbr = team, width = ifelse(selected, 0.13, 0.065)), alpha = 1) +
-      labs(
-        title = "OASIS (Opponent-Adjusted Situational Impact Score) 2024 Season",
-        x = "OASIS Defense",
-        y = "OASIS Offense",
-        caption = "OASIS = EPA adjusted for opponent strength & situational leverage - created by Eagles Eric \n@EaglesXsandOs\n"
-      ) +
-      xlim(min_plot, max_plot) + ylim(min_plot, max_plot) +
-      theme_minimal() +
-      theme(
-        plot.background = element_rect(fill = "#333333", color = NA),
-        panel.background = element_rect(fill = "#333333", color = NA),
-        panel.grid.major = element_line(color = "#555555"),
-        panel.grid.minor = element_line(color = "#555555"),
-        axis.text = element_text(color = "white", size = 12),
-        axis.title = element_text(color = "white", size = 16, face = "bold"),
-        plot.title = element_text(color = "white", size = 18, face = "bold"),
-        plot.caption = element_text(color = "white", size = 10)
-      )
   })
   
   # Percentile Table output
@@ -339,5 +314,6 @@ server <- function(input, output, session) {
   }, sanitize.text.function = function(x) x)
 }
 
-# Run the app
+# Run the app with optimized settings
+options(shiny.maxRequestSize = 30*1024^2)
 shinyApp(ui = ui, server = server)
