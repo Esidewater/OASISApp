@@ -2,3 +2,9 @@ libfreetype6-dev
 libharfbuzz-dev
 libfribidi-dev
 libcairo2-dev
+libmagick++-dev
+libarchive-dev
+libcurl4-openssl-dev
+libssl-dev
+libxml2-dev
+
