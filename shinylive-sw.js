@@ -2202,7 +2202,7 @@ function asgiToRes(res, body) {
 }
 
 // src/shinylive-sw.ts
-var useCaching = false;
+var useCaching = true;
 var cacheName = "::shinyliveServiceworker";
 var version = "v9";
 function addCoiHeaders(resp) {
