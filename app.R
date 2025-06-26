@@ -1,5 +1,5 @@
 # FILE: app.R
-# FINAL VERSION WITH ROLLING ADJUSTMENTSS
+# FINAL VERSION - Reads from oasis_data_v2.rds
 
 # These libraries are needed for the app to run.
 library(shiny)
@@ -11,8 +11,8 @@ library(ggplot2)
 library(ggimage)
 
 # --- Step 1: Load the pre-processed data ---
-# The app will load the oasis_data.rds file that you have in your repository.
-all_data <- readRDS("oasis_data.rds")
+# --- CHANGE: Reading from the new data file name ---
+all_data <- readRDS("oasis_data_v2.rds")
 pbp_all <- all_data$pbp_all
 weekly_team_strength <- all_data$weekly_team_strength
 team_logos <- all_data$team_logos
@@ -275,7 +275,7 @@ server <- function(input, output, session) {
       theme_minimal() +
       theme(
         plot.background = element_rect(fill = "#333333", color = NA),
-        panel.background = element_rect(fill = "#333333", color = NA), # <--- SYNTAX FIX HERE
+        panel.background = element_rect(fill = "#333333", color = NA),
         panel.grid.major = element_line(color = "#555555"),
         panel.grid.minor = element_line(color = "#555555"),
         axis.text = element_text(color = "white", size = 12),
