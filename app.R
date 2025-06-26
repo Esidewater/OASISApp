@@ -1,5 +1,5 @@
 # FILE: app.R
-# FINAL VERSION WITH ROLLING ADJUSTMENTS
+# FINAL VERSION WITH ROLLING ADJUSTMENTSS
 
 # These libraries are needed for the app to run.
 library(shiny)
