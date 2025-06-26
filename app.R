@@ -1,22 +1,21 @@
 # FILE: app.R
-# FINAL VERSION WITH LOGOS (Corrected)
-# This version uses ggimage to plot logos from URLs,
-# making it compatible with shinylive.
+# FINAL VERSION FOR SHINYAPPS.IO DEPLOYMENT (Syntax Corrected)
 
-# These are the ONLY libraries the live app needs.
+# These libraries will be installed on the shinyapps.io server.
 library(shiny)
 library(shinythemes)
 library(dplyr)
 library(tidyr)
 library(zoo)
 library(ggplot2)
-library(ggimage) # <-- ADDED FOR LOGOS
+library(ggimage)
 
 # --- Step 1: Load the pre-processed data ---
+# The app will load the oasis_data.rds file you upload with it.
 all_data <- readRDS("oasis_data.rds")
 pbp_all <- all_data$pbp_all
 weekly_team_strength <- all_data$weekly_team_strength
-team_logos <- all_data$team_logos # <-- LOAD LOGO DATA
+team_logos <- all_data$team_logos
 # ---
 
 # --- Pre-computation for faster loading ---
@@ -85,14 +84,14 @@ ui <- fluidPage(
     "))
   ),
   titlePanel("OASIS (Opponent-Adjusted Situational Impact Score) 2024 Season"),
-  
+
   sidebarLayout(
     sidebarPanel(
       h3("What is OASIS?"),
       p("OASIS (Opponent-Adjusted Situational Impact Score) is a new NFL statistic designed to improve upon Expected Points Added (EPA)."),
       p("Unlike traditional EPA, which assigns value to plays without context, OASIS adjusts for both the opponent and the game situation."),
       p("For example, a 10-yard gain in a close 4th-quarter game against an elite defense carries more weight than the same gain in garbage time against a weak defense."),
-      
+
       h4("How is OASIS Calculated?"),
       p("OASIS builds on EPA by adding two key adjustments:"),
       tags$ul(
@@ -100,7 +99,7 @@ ui <- fluidPage(
         tags$li("Opponent strength is determined using a rolling average of market-implied scores from betting lines."),
         tags$li("Offensive and defensive performance is adjusted based on the strength of the opponent they faced.")
       ),
-      
+
       h4("How to Read the Chart"),
       p("Each NFL logo represents a team’s performance. The axes indicate how teams compare in offensive and defensive OASIS scores."),
       tags$ul(
@@ -111,13 +110,13 @@ ui <- fluidPage(
         tags$li("Bottom-Right: Strong defense, weaker offense."),
         tags$li("Bottom-Left: Struggling in both areas.")
       ),
-      
+
       sliderInput("reg_week", "Regular Season Week:", min = 1, max = 18, value = c(1, 18)),
       sliderInput("playoff_week", "Playoff Week:", min = 19, max = 22, value = c(19, 22)),
       checkboxGroupInput("downs", "Down:", choices = c(1, 2, 3, 4), selected = c(1, 2, 3, 4)),
       actionButton("update", "Update")
     ),
-    
+
     mainPanel(
       selectInput("team_select", "Select Team for Weekly Breakdown:", choices = all_teams, selected = if("BUF" %in% all_teams) "BUF" else all_teams[1], width = "300px"),
       fluidRow(
@@ -138,26 +137,26 @@ ui <- fluidPage(
 server <- function(input, output, session) {
   filtered_data <- eventReactive(input$update, {
     withProgress(message = "Filtering data...", value = 0, {
-      pbp_filtered_by_week_and_down <- pbp_all %>%
-        filter(
-          (week >= input$reg_week[1] & week <= input$reg_week[2]) |
-            (week >= input$playoff_week[1] & week <= input$playoff_week[2]),
-          down %in% as.numeric(input$downs)
-        )
-      
-      pbp_filtered_by_week_and_down %>%
-        left_join(
-          weekly_team_strength,
-          by = c("posteam" = "team", "week")
-        ) %>%
-        left_join(
-          weekly_team_strength,
-          by = c("defteam" = "team", "week"),
-          suffix = c("_off", "_def")
-        )
+        pbp_filtered_by_week_and_down <- pbp_all %>%
+          filter(
+            (week >= input$reg_week[1] & week <= input$reg_week[2]) |
+              (week >= input$playoff_week[1] & week <= input$playoff_week[2]),
+            down %in% as.numeric(input$downs)
+          )
+
+        pbp_filtered_by_week_and_down %>%
+          left_join(
+            weekly_team_strength,
+            by = c("posteam" = "team", "week")
+          ) %>%
+          left_join(
+            weekly_team_strength,
+            by = c("defteam" = "team", "week"),
+            suffix = c("_off", "_def")
+          )
     })
   }, ignoreNULL = FALSE)
-  
+
   wp_epa_df <- reactive({
     pbp <- filtered_data()
     if(is.null(pbp) || nrow(pbp) == 0) return(tibble(team=character(), oasis_offense=double(), oasis_defense=double(), off_percentile=double(), def_percentile=double(), selected=logical()))
@@ -171,21 +170,21 @@ server <- function(input, output, session) {
         adjusted_off_epa = epa * leverage_factor * off_weight,
         adjusted_def_epa = -epa * leverage_factor * def_weight
       )
-    
+
     team_adjusted_off_epa <- pbp_adjusted %>%
       group_by(posteam) %>%
       summarize(
         adjusted_off_epa_per_play = sum(adjusted_off_epa, na.rm = TRUE) / sum(leverage_factor * off_weight, na.rm = TRUE),
         .groups = 'drop'
       )
-    
+
     team_adjusted_def_epa <- pbp_adjusted %>%
       group_by(defteam) %>%
       summarize(
         adjusted_def_epa_per_play = sum(adjusted_def_epa, na.rm = TRUE) / sum(leverage_factor * def_weight, na.rm = TRUE),
         .groups = 'drop'
       )
-    
+
     team_adjusted_off_epa %>%
       inner_join(team_adjusted_def_epa, by = c("posteam" = "defteam")) %>%
       rename(team = posteam) %>%
@@ -197,27 +196,27 @@ server <- function(input, output, session) {
         selected = team == input$team_select
       )
   })
-  
+
   weekly_breakdown <- reactive({
-    if (nrow(season_off_oasis) == 0 || nrow(season_def_oasis) == 0 || is.null(input$team_select)) {
-      return(tibble(Week = integer(), Opponent = character(), `Offensive Percentile` = character(), `Defensive Percentile` = character()))
-    }
-    
-    withProgress(message = "Calculating weekly breakdown...", value = 0, {
+      if (nrow(season_off_oasis) == 0 || nrow(season_def_oasis) == 0 || is.null(input$team_select)) {
+          return(tibble(Week = integer(), Opponent = character(), `Offensive Percentile` = character(), `Defensive Percentile` = character()))
+      }
+      
+      withProgress(message = "Calculating weekly breakdown...", value = 0, {
       off_data <- season_off_oasis %>%
         filter(team == input$team_select) %>%
         mutate(off_percentile = round(off_ecdf(off_oasis) * 100)) %>%
         left_join(pbp_all %>% select(posteam, week, defteam) %>% distinct(), by = c("team" = "posteam", "week")) %>%
         rename(opponent = defteam) %>%
         select(week, opponent, off_percentile)
-      
+
       def_data <- season_def_oasis %>%
         filter(team == input$team_select) %>%
         mutate(def_percentile = round(def_ecdf(def_oasis) * 100)) %>%
         left_join(pbp_all %>% select(defteam, week, posteam) %>% distinct(), by = c("team" = "defteam", "week")) %>%
         rename(opponent = posteam) %>%
         select(week, opponent, def_percentile)
-      
+
       off_data %>%
         full_join(def_data, by = c("week", "opponent")) %>%
         filter(!is.na(opponent)) %>%
@@ -245,29 +244,27 @@ server <- function(input, output, session) {
         )
     })
   })
-  
+
   output$oasisPlot <- renderPlot({
     # Join the main data with the logo URLs
     data <- wp_epa_df() %>%
       left_join(team_logos, by = c("team" = "team_abbr"))
-    
+      
     if(nrow(data) == 0) return(NULL)
-    
+
     min_val <- min(min(data$oasis_defense, na.rm = TRUE), min(data$oasis_offense, na.rm = TRUE))
     max_val <- max(max(data$oasis_defense, na.rm = TRUE), max(data$oasis_offense, na.rm = TRUE))
-    
+
     buffer <- 0.1 * (max_val - min_val)
     min_plot <- min_val - buffer
     max_plot <- max_val + buffer
-    
+
     ggplot(data, aes(x = oasis_defense, y = oasis_offense)) +
       geom_hline(yintercept = 0, linetype = "dashed", color = "white") +
       geom_vline(xintercept = 0, linetype = "dashed", color = "white") +
       geom_hline(yintercept = mean(data$oasis_offense, na.rm = TRUE), linetype = "solid", color = "grey50") +
       geom_vline(xintercept = mean(data$oasis_defense, na.rm = TRUE), linetype = "solid", color = "grey50") +
-      # --- FINAL CHANGE: Use geom_image to plot logos from URLs ---
       geom_image(aes(image = team_logo_espn, size = I(ifelse(selected, 0.09, 0.05))), asp = 16/9) +
-      # ---
       labs(
         title = "OASIS (Opponent-Adjusted Situational Impact Score) 2024 Season",
         x = "OASIS Defense",
@@ -278,7 +275,7 @@ server <- function(input, output, session) {
       theme_minimal() +
       theme(
         plot.background = element_rect(fill = "#333333", color = NA),
-        panel.background = element_rect(fill = "#333333", color = NA),
+        panel.background = element_rect(fill = "#333333", color = NA), # <--- SYNTAX FIX HERE
         panel.grid.major = element_line(color = "#555555"),
         panel.grid.minor = element_line(color = "#555555"),
         axis.text = element_text(color = "white", size = 12),
@@ -288,7 +285,7 @@ server <- function(input, output, session) {
         plot.margin = margin(30, 30, 30, 30)
       )
   })
-  
+
   output$percentileTable <- renderTable({
     df <- wp_epa_df()
     if(nrow(df) == 0) return(tibble(team=character(), `Offensive Percentile`=character(), `Defensive Percentile`=character()))
@@ -315,15 +312,15 @@ server <- function(input, output, session) {
       ) %>%
       select(team, `Offensive Percentile`, `Defensive Percentile`)
   }, sanitize.text.function = function(x) x)
-  
+
   output$weeklyHeader <- renderText({
     paste("Weekly Percentiles for", input$team_select)
   })
-  
+
   output$weeklyBreakdown <- renderTable({
     weekly_breakdown()
   }, sanitize.text.function = function(x) x)
 }
 
-# --- THIS LINE WAS MISSING ---
+# --- This line is required to run the app ---
 shinyApp(ui = ui, server = server)
