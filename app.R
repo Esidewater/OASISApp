@@ -1,7 +1,7 @@
 # FILE: app.R
-# FINAL VERSION FOR SHINYAPPS.IO DEPLOYMENT (Syntax Corrected)
+# FINAL VERSION WITH ROLLING ADJUSTMENTS
 
-# These libraries will be installed on the shinyapps.io server.
+# These libraries are needed for the app to run.
 library(shiny)
 library(shinythemes)
 library(dplyr)
@@ -11,7 +11,7 @@ library(ggplot2)
 library(ggimage)
 
 # --- Step 1: Load the pre-processed data ---
-# The app will load the oasis_data.rds file you upload with it.
+# The app will load the oasis_data.rds file that you have in your repository.
 all_data <- readRDS("oasis_data.rds")
 pbp_all <- all_data$pbp_all
 weekly_team_strength <- all_data$weekly_team_strength
